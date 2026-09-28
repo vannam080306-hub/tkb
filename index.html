@@ -23,6 +23,12 @@
     footer { color:var(--muted); font-size:.83rem; margin-top:13px; text-align:center } @media(max-width:900px) { .workspace-layout { grid-template-columns:1fr; } .side-menu { grid-template-columns:repeat(2,minmax(0,1fr)); } } @media(max-width:600px) { main { padding:0 12px 30px; margin-top:12px } header { padding:24px 16px } .form-grid { grid-template-columns:1fr } .week-navigation { order:3; width:100%; justify-content:center; } #weekPicker { flex:1; } .side-menu { grid-template-columns:1fr; } .details-body { padding:4px 12px 16px; } }
     @media print { body { background:#fff } header { background:#fff!important; color:#111; padding:0 0 18px } main { max-width:none; margin:0; padding:0 } .toolbar,footer,.delete { display:none!important } .card { border:0; box-shadow:none } .cell { print-color-adjust:exact; -webkit-print-color-adjust:exact } }
   </style>
+  <style>
+    .row-drag-handle { flex:none; padding:6px 8px; color:#667085; background:#f1f4f9; cursor:grab; touch-action:none; }
+    .row-drag-handle:active { cursor:grabbing; }
+    #schedule tr.is-dragging { opacity:.45; }
+    #schedule tr.drop-target td { border-top:2px solid var(--blue); }
+  </style>
 </head>
 <body>
   <header><h1>Thời khóa biểu của tôi</h1><p>Thêm học sinh, xếp lịch theo tuần hoặc tạo buổi dạy bù theo ngày.</p></header>
@@ -78,6 +84,12 @@
     $('#deleteSubject').onclick=()=>{const collection=activeType==='makeup'?'makeups':'items';data[collection]=data[collection].filter(item=>String(item.id)!==String(active));dialog.close();render()};
     dialog.querySelector('form').addEventListener('submit',e=>{if(e.submitter?.value==='cancel')return;const type=$('#scheduleType').value,slot=+$('#slot').value,item={id:active||Date.now(),studentId:$('#student').value,note:$('#note').value.trim(),slot,color:$('#color').value};if(type==='makeup')item.date=$('#makeupDate').value;else item.day=+$('#day').value;if(!item.studentId||(type==='makeup'&&!item.date)){e.preventDefault();return}data.items=data.items.filter(entry=>String(entry.id)!==String(item.id));data.makeups=data.makeups.filter(entry=>String(entry.id)!==String(item.id));const collection=type==='makeup'?'makeups':'items';data[collection]=data[collection].filter(entry=>!(type==='makeup'?entry.date===item.date&&entry.slot===item.slot:entry.day===item.day&&entry.slot===item.slot));data[collection].push(item);render()});
     studentDialog.querySelector('form').addEventListener('submit',e=>{if(e.submitter?.value==='cancel')return;const name=$('#studentName').value.trim();if(!name){e.preventDefault();return}if(data.students.some(student=>student.name.toLocaleLowerCase()===name.toLocaleLowerCase()&&String(student.id)!==String(activeStudent))){e.preventDefault();alert('Tên học sinh này đã có trong danh sách.');return}if(activeStudent){const student=data.students.find(entry=>String(entry.id)===String(activeStudent));if(student)student.name=name}else data.students.push({id:'student-'+Date.now(),name});render()});
+    const scheduleObserver=new MutationObserver(()=>schedule.querySelectorAll('tr').forEach(row=>{if(row.querySelector('.row-drag-handle'))return;const handle=document.createElement('button');handle.type='button';handle.className='row-drag-handle';handle.draggable=true;handle.textContent='↕';handle.title='Kéo để di chuyển khung giờ';handle.setAttribute('aria-label','Kéo để di chuyển khung giờ');row.querySelector('.time-slot').prepend(handle)}));
+    scheduleObserver.observe(schedule,{childList:true});
+    schedule.addEventListener('dragstart',e=>{const handle=e.target.closest('.row-drag-handle');if(!handle){e.preventDefault();return}const row=handle.closest('tr');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',row.querySelector('.time-input').dataset.slot);row.classList.add('is-dragging')});
+    schedule.addEventListener('dragend',e=>{const row=e.target.closest('tr');if(row)row.classList.remove('is-dragging');schedule.querySelectorAll('.drop-target').forEach(target=>target.classList.remove('drop-target'))});
+    schedule.addEventListener('dragover',e=>{const row=e.target.closest('tr');if(!row)return;e.preventDefault();schedule.querySelectorAll('.drop-target').forEach(target=>target.classList.remove('drop-target'));row.classList.add('drop-target');e.dataTransfer.dropEffect='move'});
+    schedule.addEventListener('drop',e=>{const row=e.target.closest('tr');if(!row)return;e.preventDefault();const from=+e.dataTransfer.getData('text/plain'),target=+row.querySelector('.time-input').dataset.slot,after=e.clientY>row.getBoundingClientRect().top+row.offsetHeight/2;let to=target+(after?1:0);if(from<to)to--;to=Math.max(0,Math.min(data.rows.length-1,to));if(from===to)return;const remap=slot=>slot===from?to:from<to&&slot>from&&slot<=to?slot-1:from>to&&slot>=to&&slot<from?slot+1:slot;data.rows.splice(to,0,data.rows.splice(from,1)[0]);for(const item of [...data.items,...data.makeups])item.slot=remap(item.slot);for(const log of data.teachingLogs)log.slot=remap(log.slot);render()});
     render();setInterval(()=>{if(syncAutoLogs()){save();renderTeaching()}},60000);
   </script>
 </body>

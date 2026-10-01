@@ -54,6 +54,10 @@
     @media(max-width:600px) { .homework-entry { grid-template-columns:1fr; } .homework-history { grid-column:auto; } }
     @media(max-width:600px) { .homework-row { grid-template-columns:1fr; gap:8px; } .homework-note { grid-column:1/-1; } }
   </style>
+  <style>
+    .side-menu [data-open-panel="homework"] { display:flex; }
+    .homework-student-list { list-style:none; margin:0; padding:0; }
+  </style>
 </head>
 <body>
   <header><h1>Thời khóa biểu của tôi</h1><p>Thêm học sinh, xếp lịch theo tuần hoặc tạo buổi dạy bù theo ngày.</p></header>
@@ -253,6 +257,86 @@
       return changed;
     };
     render();setInterval(()=>{if(syncAutoLogs()){save();renderTeaching()}},60000);
+  </script>
+  <script>
+    const homeworkPanel=$('#homeworkPanel');
+    const homeworkListElement=$('#homeworkList');
+    homeworkPanel.innerHTML='<div class="section-heading"><h2>Giao bài tập</h2></div><section class="card"><ul id="homeworkStudentList" class="homework-student-list"></ul></section><section id="homeworkStudentDetails" class="tracking" hidden><div class="profile-header"><button id="backToHomeworkStudents" class="secondary">‹ Danh sách học sinh</button><div><h2 id="homeworkStudentName"></h2><div id="homeworkStudentSummary" class="profile-summary"></div></div></div><section id="homeworkRecords" class="card"></section></section>';
+    $('#homeworkRecords').append(homeworkListElement);
+    function renderHomeworkStudents(){
+      const list=$('#homeworkStudentList');
+      list.innerHTML=data.students.length?data.students.map(student=>{
+        const assignments=student.homeworkAssignments||[];
+        const assigned=assignments.length>0||Boolean(student.homeworkAssigned||student.homeworkNote);
+        return '<li class="student-row"><button class="student-open" data-open-homework-student="'+esc(student.id)+'"><span class="student-details"><strong>'+esc(student.name)+'</strong><small class="student-summary">'+assignments.length+' bài đã giao</small><small class="homework-status '+(assigned?'is-assigned':'is-unassigned')+'">'+(assigned?'Đã giao':'Chưa giao')+'</small></span></button><button class="secondary" data-open-homework-student="'+esc(student.id)+'">Ghi bài</button></li>';
+      }).join(''):'<li class="empty-state">Chưa có học sinh. Thêm học sinh trong mục Học sinh để bắt đầu giao bài.</li>';
+    }
+    const renderStudentsBeforeHomework=renderStudentList;
+    renderStudentList=function(){renderStudentsBeforeHomework();renderHomeworkStudents()};
+    const getLessonsBeforeSkipFilter=getLessons;
+    getLessons=function(date){return getLessonsBeforeSkipFilter(date).filter(item=>!data.skippedLessons.includes(occurrenceId(date,item.type,item)))};
+    const renderHomeworkDetails=renderHomework;
+    renderHomework=function(){
+      renderHomeworkDetails();
+      const student=data.students.find(entry=>String(entry.id)===String(activeStudent));
+      if(student)$('#homeworkStudentSummary').textContent=(student.homeworkAssignments||[]).length+' bài đã giao';
+    };
+    openStudentDetails=function(student){
+      activeStudent=student.id;
+      $('#studentsPanel').hidden=true;
+      $('#homeworkPanel').hidden=true;
+      $('#studentDetailsPanel').hidden=false;
+      $('#detailsTitle').textContent=student.name;
+      renderTeaching();
+    };
+    $('#homeworkStudentList').addEventListener('click',e=>{
+      const button=e.target.closest('[data-open-homework-student]');
+      if(!button)return;
+      const student=data.students.find(entry=>String(entry.id)===button.dataset.openHomeworkStudent);
+      if(!student)return;
+      activeStudent=student.id;
+      $('#homeworkStudentList').parentElement.hidden=true;
+      $('#homeworkStudentDetails').hidden=false;
+      $('#detailsTitle').textContent='Giao bài tập';
+      $('#homeworkStudentName').textContent=student.name;
+      $('#homeworkStudentSummary').textContent=(student.homeworkAssignments||[]).length+' bài đã giao';
+      renderHomework();
+    });
+    $('#backToHomeworkStudents').addEventListener('click',()=>{
+      activeStudent=null;
+      $('#homeworkStudentList').parentElement.hidden=false;
+      $('#homeworkStudentDetails').hidden=true;
+      $('#detailsTitle').textContent='Giao bài tập';
+    });
+    $('.side-menu').addEventListener('click',e=>{
+      const button=e.target.closest('[data-open-panel="homework"]');
+      if(!button)return;
+      activeStudent=null;
+      $('#homeworkStudentList').parentElement.hidden=false;
+      $('#homeworkStudentDetails').hidden=true;
+      $('#detailsTitle').textContent='Giao bài tập';
+      renderHomeworkStudents();
+    });
+    schedule.addEventListener('click',e=>{
+      const button=e.target.closest('.skip-lesson');
+      if(!button)return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const id=occurrenceId(button.dataset.skipDate,button.dataset.skipType,{id:button.dataset.skipId});
+      const index=data.skippedLessons.indexOf(id);
+      if(index>=0)data.skippedLessons.splice(index,1);
+      else{
+        data.skippedLessons.push(id);
+        data.teachingLogs=data.teachingLogs.filter(log=>log.id!==id);
+      }
+      syncAutoLogs();
+      save();
+      renderStudentList();
+      render();
+      renderTeaching();
+      renderHomework();
+    },true);
+    renderStudentList();
   </script>
 </body>
 </html>

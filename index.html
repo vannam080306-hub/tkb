@@ -40,10 +40,17 @@
     .homework-note { min-height:42px; }
     .homework-entry { display:grid; grid-template-columns:160px minmax(0,1fr) auto; gap:8px; align-items:end; }
     .homework-history { grid-column:1/-1; display:grid; gap:7px; padding-top:4px; }
-    .homework-record { padding:8px 10px; border-left:3px solid #3b9b64; background:#f1faf4; border-radius:4px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .homework-record { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-left:3px solid #3b9b64; background:#f1faf4; border-radius:4px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .homework-record > div { min-width:0; flex:1; }
     .homework-record strong { display:block; margin-bottom:3px; font-size:.82rem; }
-    .homework-status { display:inline-block; margin-top:5px; padding:3px 7px; border-radius:999px; color:#176b3a; background:#e6f6ec; font-size:.75rem; font-weight:700; }
+    .homework-status { display:inline-block; margin-top:5px; padding:3px 7px; border-radius:999px; font-size:.75rem; font-weight:700; }
+    .homework-status.is-assigned { color:#176b3a; background:#e6f6ec; }
+    .homework-status.is-unassigned { color:#8a4b17; background:#fff4df; }
     .homework-save { white-space:nowrap; }
+    .homework-delete { flex:none; display:grid; place-items:center; width:32px; height:32px; padding:0; color:#778194; background:transparent; }
+    .homework-delete:hover { color:#c23b45; background:#fff1f1; }
+    .homework-delete svg { display:block; width:17px; height:17px; }
+    .side-menu [data-open-panel="homework"] { display:none; }
     @media(max-width:600px) { .homework-entry { grid-template-columns:1fr; } .homework-history { grid-column:auto; } }
     @media(max-width:600px) { .homework-row { grid-template-columns:1fr; gap:8px; } .homework-note { grid-column:1/-1; } }
   </style>
@@ -85,9 +92,28 @@
     function syncAutoLogs(){let changed=false;const today=dateValue(new Date());for(let cursor=new Date(data.firstUseDate+'T12:00:00');dateValue(cursor)<=today;cursor.setDate(cursor.getDate()+1)){const date=dateValue(cursor),day=(cursor.getDay()+6)%7,makeups=data.makeups.filter(item=>item.date===date),makeupSlots=new Set(makeups.map(item=>item.slot)),occurrences=[...data.items.filter(item=>item.day===day&&!makeupSlots.has(item.slot)).map(item=>({item,type:'weekly'})),...makeups.map(item=>({item,type:'makeup'}))];for(const {item,type} of occurrences){const id=occurrenceId(date,type,item);if(!data.skippedLessons.includes(id)&&!data.deletedTeachingLogs.includes(id)&&dueByNow(date,item.slot)&&!data.teachingLogs.some(log=>log.id===id)){data.teachingLogs.push({id,date,itemId:item.id,studentId:item.studentId,studentName:studentName(item.studentId),slot:item.slot,slotLabel:data.rows[item.slot]||'Khung giờ '+(item.slot+1),type});changed=true}}}return changed}
     function getLessons(date){const day=(new Date(date+'T12:00:00').getDay()+6)%7,makeups=data.makeups.filter(item=>item.date===date),makeupSlots=new Set(makeups.map(item=>item.slot));return [...data.items.filter(item=>item.day===day&&!makeupSlots.has(item.slot)).map(item=>({...item,type:'weekly'})),...makeups.map(item=>({...item,type:'makeup'}))].sort((a,b)=>a.slot-b.slot)}
     function renderStudentList(){const list=$('#studentList'),makeupTotal=data.teachingLogs.filter(log=>log.type==='makeup').length;$('#studentCount').textContent=data.teachingLogs.length+' buổi · '+makeupTotal+' buổi dạy bù';list.innerHTML=data.students.length?data.students.map(student=>{const logs=data.teachingLogs.filter(log=>String(log.studentId)===String(student.id)),makeupCount=logs.filter(log=>log.type==='makeup').length;return '<li class="student-row"><button class="student-open" data-open-student="'+esc(student.id)+'"><span class="student-details"><strong>'+esc(student.name)+'</strong><small class="student-summary">'+logs.length+' buổi · '+makeupCount+' buổi dạy bù</small></span></button><div class="student-actions"><button class="secondary" data-edit-student="'+esc(student.id)+'" aria-label="Sửa '+esc(student.name)+'">Sửa</button><button class="danger" data-delete-student="'+esc(student.id)+'" aria-label="Xóa '+esc(student.name)+'">Xóa</button></div></li>'}).join(''):'<li class="empty-state">Chưa có học sinh. Thêm học sinh để bắt đầu xếp lịch.</li>'}
-    function renderHomework(){const list=$('#homeworkList');list.innerHTML=data.students.length?data.students.map(student=>{const records=student.homeworkAssignments||[],legacyNote=student.homeworkNote||'',history=records.map(record=>'<div class="homework-record"><strong>'+formatDate(record.date)+'</strong>'+esc(record.note)+'</div>').join('');return '<li class="homework-row"><strong>'+esc(student.name)+'</strong><div class="homework-entry"><label>Ngày buổi học<input type="date" data-homework-date="'+esc(student.id)+'" value="'+dateValue(new Date())+'"></label><label>Ghi chú bài tập<textarea class="homework-note" data-homework-note="'+esc(student.id)+'" aria-label="Ghi chú bài tập của '+esc(student.name)+'" placeholder="Nội dung bài tập"></textarea></label><button type="button" class="homework-save" data-save-homework="'+esc(student.id)+'">Lưu bài tập</button></div>'+(legacyNote&&!records.length?'<div class="homework-record"><strong>Bài tập đã lưu trước đây</strong>'+esc(legacyNote)+'</div>':'')+(history?'<div class="homework-history">'+history+'</div>':'')+'</li>'}).join(''):'<li class="empty-state">Chưa có học sinh trong danh sách.</li>'}
+    function getHomeworkLessonDates(studentId){
+      const dates=new Set(data.teachingLogs.filter(log=>String(log.studentId)===String(studentId)).map(log=>log.date));
+      for(let offset=0;offset<90;offset++){
+        const date=new Date();
+        date.setDate(date.getDate()-offset);
+        const value=dateValue(date);
+        if(getLessons(value).some(item=>String(item.studentId)===String(studentId)&&dueByNow(value,item.slot)&&!data.skippedLessons.includes(occurrenceId(value,item.type,item))))dates.add(value);
+      }
+      return [...dates].sort((a,b)=>b.localeCompare(a));
+    }
+    function renderHomework(){
+      const list=$('#homeworkList'),student=data.students.find(entry=>String(entry.id)===String(activeStudent));
+      if(!student){list.innerHTML='<li class="empty-state">Mở hồ sơ học sinh để ghi bài tập.</li>';return}
+      const records=Array.isArray(student.homeworkAssignments)?student.homeworkAssignments:[],dates=getHomeworkLessonDates(student.id),selectedDate=dates.includes(teachingDate.value)?teachingDate.value:dates[0]||'';
+      const dateOptions=dates.length?dates.map(date=>'<option value="'+esc(date)+'"'+(date===selectedDate?' selected':'')+'>'+formatDate(date)+'</option>').join(''):'<option value="">Chưa có buổi học đã diễn ra</option>';
+      const history=records.map((record,index)=>'<div class="homework-record"><div><strong>'+formatDate(record.date)+'</strong>'+esc(record.note)+'</div><button type="button" class="homework-delete" data-delete-homework="'+index+'" title="Xóa ghi chú bài tập" aria-label="Xóa ghi chú bài tập ngày '+formatDate(record.date)+'"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 7.5 6 17h8l1-9.5M4 6.5l12-2M8 4l3-.5 2 1.2M8.5 9v5m3-5v5"/></svg></button></div>').join('');
+      const legacyNote=student.homeworkNote||'';
+      const legacyHistory=legacyNote?'<div class="homework-record"><div><strong>Ghi chú cũ</strong>'+esc(legacyNote)+'</div><button type="button" class="homework-delete" data-delete-legacy-homework title="Xóa ghi chú cũ" aria-label="Xóa ghi chú cũ"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 7.5 6 17h8l1-9.5M4 6.5l12-2M8 4l3-.5 2 1.2M8.5 9v5m3-5v5"/></svg></button></div>':'';
+      list.innerHTML='<li class="homework-row"><div class="homework-entry"><label>Ngày buổi học<select id="homeworkLessonDate"'+(dates.length?'':' disabled')+'>'+dateOptions+'</select></label><label>Ghi chú bài tập<textarea id="homeworkNoteInput" class="homework-note" aria-label="Ghi chú bài tập của '+esc(student.name)+'" placeholder="Nội dung bài tập"></textarea></label><button type="button" class="homework-save" data-save-homework="'+esc(student.id)+'"'+(dates.length?'':' disabled')+'>Lưu bài tập</button></div>'+(history||legacyHistory?'<div class="homework-history">'+history+legacyHistory+'</div>':'<div class="empty-state">Chưa có bài tập được ghi nhận.</div>')+'</li>';
+    }
     function renderTeaching(){const date=teachingDate.value,lessonList=$('#lessonList'),lessons=activeStudent?getLessons(date).filter(item=>String(item.studentId)===String(activeStudent)):[];lessonList.innerHTML=lessons.length?lessons.map(item=>{const logged=data.teachingLogs.some(log=>log.id===occurrenceId(date,item.type,item));return '<li class="lesson-row"><div class="lesson-details"><strong>'+esc(data.rows[item.slot]||'Khung giờ '+(item.slot+1))+'</strong><small>'+(item.type==='makeup'?'Dạy bù':'Lịch tuần')+(item.note?' · '+esc(item.note):'')+'</small></div><span class="lesson-status">'+(logged?'Đã ghi nhận tự động':dueByNow(date,item.slot)?'Đang ghi nhận':'Chưa đến giờ')+'</span></li>'}).join(''):'<li class="empty-state">Không có buổi dạy nào của học sinh này trong ngày đã chọn.</li>';const student=data.students.find(entry=>String(entry.id)===String(activeStudent)),logs=data.teachingLogs.filter(log=>String(log.studentId)===String(activeStudent)).sort((a,b)=>b.date.localeCompare(a.date)||b.slot-a.slot);if(student){const makeupCount=logs.filter(log=>log.type==='makeup').length;$('#detailsTitle').textContent=student.name;$('#selectedStudentName').textContent=student.name;$('#selectedStudentSummary').textContent=logs.length+' buổi đã ghi nhận · '+makeupCount+' buổi dạy bù'}$('#historyList').innerHTML=logs.length?logs.map(log=>'<li class="history-row"><div class="history-details"><strong>'+formatDate(log.date)+' · '+esc(log.slotLabel||data.rows[log.slot]||'Khung giờ '+(log.slot+1))+'</strong><small>'+(log.type==='makeup'?'Dạy bù':'Lịch tuần')+'</small></div><button class="history-delete danger" data-delete-log="'+esc(log.id)+'" aria-label="Xóa buổi dạy ngày '+formatDate(log.date)+'">Xóa</button></li>').join(''):'<li class="empty-state">Chưa có buổi dạy được ghi nhận.</li>'}
-    function openStudentDetails(student){activeStudent=student.id;$('#studentsPanel').hidden=true;$('#studentDetailsPanel').hidden=false;$('#detailsTitle').textContent=student.name;renderTeaching()}
+    function openStudentDetails(student){activeStudent=student.id;$('#studentsPanel').hidden=true;$('#homeworkPanel').hidden=false;$('#studentDetailsPanel').hidden=false;$('#detailsTitle').textContent=student.name;renderTeaching();renderHomework()}
     function render(){const dates=currentWeekDates();dates.forEach((date,day)=>{$('#day-'+day).innerHTML=days[day]+'<br><small>'+formatDate(date)+'</small>'});schedule.innerHTML=data.rows.map((time,slot)=>'<tr draggable="true"><td><div class="time-slot"><input class="time-input" aria-label="Thời gian hàng '+(slot+1)+'" value="'+esc(time)+'" data-slot="'+slot+'"><button class="delete-slot" data-delete-slot="'+slot+'" title="Xóa khung giờ" aria-label="Xóa khung giờ '+(slot+1)+'"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 7.5 6 17h8l1-9.5M4 6.5l12-2M8 4l3-.5 2 1.2M8.5 9v5m3-5v5"/></svg></button></div></td>'+days.map((_,day)=>{const date=dates[day],makeup=data.makeups.find(item=>item.date===date&&item.slot===slot),item=makeup||data.items.find(entry=>entry.day===day&&entry.slot===slot),type=makeup?'makeup':'weekly',occurrence= item&&occurrenceId(date,type,item),skipped=item&&data.skippedLessons.includes(occurrence);return '<td>'+(item?'<article class="cell" data-id="'+item.id+'" data-type="'+type+'" style="background:'+esc(item.color)+'"><button class="delete" title="Xóa lịch" aria-label="Xóa lịch"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 7.5 6 17h8l1-9.5M4 6.5l12-2M8 4l3-.5 2 1.2M8.5 9v5m3-5v5"/></svg></button>'+(makeup?'<small class="occurrence">Dạy bù · '+formatDate(date)+'</small>':'')+'<strong>'+esc(studentName(item.studentId))+'</strong><button class="skip-lesson'+(skipped?' is-skipped':'')+'" data-skip-date="'+date+'" data-skip-type="'+type+'" data-skip-id="'+item.id+'">'+(skipped?'Đã nghỉ dạy · Hoàn tác':'Nghỉ dạy')+'</button>'+(item.note?'<small>'+esc(item.note)+'</small>':'')+'</article>':'<article class="cell empty" data-day="'+day+'" data-date="'+date+'" data-slot="'+slot+'">＋</article>')+'</td>'}).join('')+'</tr>').join('');syncAutoLogs();renderStudentList();renderTeaching();save()}
     const renderWithStartDates=render;
     render=function(){renderWithStartDates();const dates=currentWeekDates();schedule.querySelectorAll('tr').forEach((row,slot)=>Array.from(row.cells).slice(1).forEach((cell,day)=>{const article=cell.querySelector('.cell[data-type="weekly"]');if(!article)return;const item=data.items.find(entry=>String(entry.id)===article.dataset.id);if(!item?.startDate||dates[day]>=item.startDate)return;const empty=document.createElement('article');empty.className='cell empty';empty.dataset.day=day;empty.dataset.date=dates[day];empty.dataset.slot=slot;empty.textContent='＋';article.replaceWith(empty)}))};
@@ -110,15 +136,40 @@
     window.addEventListener('submit',e=>{if(e.target!==dialog.querySelector('form')||e.submitter?.value==='cancel'||$('#scheduleType').value!=='weekly')return;const item=data.items.find(entry=>entry.day===+$('#day').value&&entry.slot===+$('#slot').value);if(item){item.startDate=dateValue(new Date());save();render()}});
     studentDialog.querySelector('form').addEventListener('submit',e=>{if(e.submitter?.value==='cancel')return;const name=$('#studentName').value.trim(),feePerLesson=Number($('#studentFee').value);if(!name||!Number.isFinite(feePerLesson)||feePerLesson<0){e.preventDefault();return}if(data.students.some(student=>student.name.toLocaleLowerCase()===name.toLocaleLowerCase()&&String(student.id)!==String(activeStudent))){e.preventDefault();alert('Tên học sinh này đã có trong danh sách.');return}if(activeStudent){const student=data.students.find(entry=>String(entry.id)===String(activeStudent));if(student){student.name=name;student.feePerLesson=feePerLesson}}else data.students.push({id:'student-'+Date.now(),name,feePerLesson,homeworkAssigned:false,homeworkNote:''});render()});
     $('#homeworkList').addEventListener('click',e=>{
+      const remove=e.target.closest('[data-delete-homework]'),removeLegacy=e.target.closest('[data-delete-legacy-homework]');
+      if(remove){
+        const student=data.students.find(entry=>String(entry.id)===String(activeStudent)),index=Number(remove.dataset.deleteHomework);
+        if(!student||!confirm('Xóa ghi chú bài tập ngày '+formatDate(student.homeworkAssignments[index].date)+'?'))return;
+        student.homeworkAssignments.splice(index,1);
+        student.homeworkAssigned=student.homeworkAssignments.length>0;
+        save();
+        renderStudentList();
+        renderHomework();
+        return;
+      }
+      if(removeLegacy){
+        const student=data.students.find(entry=>String(entry.id)===String(activeStudent));
+        if(!student||!confirm('Xóa ghi chú bài tập cũ này?'))return;
+        student.homeworkNote='';
+        student.homeworkAssigned=(student.homeworkAssignments||[]).length>0;
+        save();
+        renderStudentList();
+        renderHomework();
+        return;
+      }
       const button=e.target.closest('[data-save-homework]');
       if(!button)return;
-      const student=data.students.find(entry=>String(entry.id)===button.dataset.saveHomework),row=button.closest('.homework-row'),date=row.querySelector('[data-homework-date]').value,note=row.querySelector('[data-homework-note]').value.trim();
-      if(!student||!date||!note){alert('Vui lòng chọn ngày buổi học và ghi nội dung bài tập.');return}
+      const student=data.students.find(entry=>String(entry.id)===button.dataset.saveHomework),date=$('#homeworkLessonDate').value,note=$('#homeworkNoteInput').value.trim();
+      const hasLesson=date&&(getLessons(date).some(item=>String(item.studentId)===String(student?.id)&&dueByNow(date,item.slot)&&!data.skippedLessons.includes(occurrenceId(date,item.type,item)))||data.teachingLogs.some(log=>String(log.studentId)===String(student?.id)&&log.date===date));
+      if(!student||!hasLesson||!note){alert('Chọn ngày buổi học của học sinh và nhập nội dung bài tập trước khi lưu.');return}
       if(!Array.isArray(student.homeworkAssignments))student.homeworkAssignments=[];
       student.homeworkAssignments.push({date,note});
+      student.homeworkAssigned=true;
       save();
       renderStudentList();
+      renderHomework();
     });
+    $('#backToStudents').addEventListener('click',()=>{$('#homeworkPanel').hidden=true});
     schedule.addEventListener('dragstart',e=>{const row=e.target.closest('tr[draggable="true"]');if(!row){e.preventDefault();return}e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',row.querySelector('.time-input').dataset.slot);row.classList.add('is-dragging')});
     schedule.addEventListener('dragend',e=>{const row=e.target.closest('tr');if(row)row.classList.remove('is-dragging');schedule.querySelectorAll('.drop-target').forEach(target=>target.classList.remove('drop-target'))});
     schedule.addEventListener('dragover',e=>{const row=e.target.closest('tr');if(!row)return;e.preventDefault();schedule.querySelectorAll('.drop-target').forEach(target=>target.classList.remove('drop-target'));row.classList.add('drop-target');e.dataTransfer.dropEffect='move'});
@@ -139,18 +190,16 @@
     const renderStudentsWithReset=renderStudentList;
     renderStudentList=function(){
       renderStudentsWithReset();
-      renderHomework();
       document.querySelectorAll('.student-row .student-actions').forEach(actions=>{
         const studentButton=actions.parentElement.querySelector('[data-open-student]');
         const student=data.students.find(entry=>String(entry.id)===studentButton.dataset.openStudent);
         const lessonCount=data.teachingLogs.filter(log=>String(log.studentId)===String(student.id)).length;
         actions.parentElement.querySelector('.student-summary').textContent+=' · '+formatMoney(Number(student.feePerLesson)||0)+'/buổi · Tổng '+formatMoney(lessonCount*(Number(student.feePerLesson)||0));
-        if((student.homeworkAssignments||[]).length||student.homeworkAssigned){
-          const status=document.createElement('small');
-          status.className='homework-status';
-          status.textContent='Đã giao bài tập';
-          actions.parentElement.querySelector('.student-details').append(status);
-        }
+        const assigned=(student.homeworkAssignments||[]).length>0||Boolean(student.homeworkAssigned||student.homeworkNote);
+        const status=document.createElement('small');
+        status.className='homework-status '+(assigned?'is-assigned':'is-unassigned');
+        status.textContent=assigned?'Đã giao':'Chưa giao';
+        actions.parentElement.querySelector('.student-details').append(status);
         const reset=document.createElement('button');
         reset.type='button';
         reset.className='secondary';

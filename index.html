@@ -199,11 +199,6 @@
         const student=data.students.find(entry=>String(entry.id)===studentButton.dataset.openStudent);
         const lessonCount=data.teachingLogs.filter(log=>String(log.studentId)===String(student.id)).length;
         actions.parentElement.querySelector('.student-summary').textContent+=' · '+formatMoney(Number(student.feePerLesson)||0)+'/buổi · Tổng '+formatMoney(lessonCount*(Number(student.feePerLesson)||0));
-        const assigned=(student.homeworkAssignments||[]).length>0||Boolean(student.homeworkAssigned||student.homeworkNote);
-        const status=document.createElement('small');
-        status.className='homework-status '+(assigned?'is-assigned':'is-unassigned');
-        status.textContent=assigned?'Đã giao':'Chưa giao';
-        actions.parentElement.querySelector('.student-details').append(status);
         const reset=document.createElement('button');
         reset.type='button';
         reset.className='secondary';
@@ -256,7 +251,7 @@
       }
       return changed;
     };
-    render();setInterval(()=>{if(syncAutoLogs()){save();renderTeaching()}},60000);
+    render();setInterval(()=>{if(syncAutoLogs()){save();renderTeaching();renderStudentList();renderHomeworkStudents()}},60000);
   </script>
   <script>
     const homeworkPanel=$('#homeworkPanel');
@@ -267,7 +262,8 @@
       const list=$('#homeworkStudentList');
       list.innerHTML=data.students.length?data.students.map(student=>{
         const assignments=student.homeworkAssignments||[];
-        const assigned=assignments.length>0||Boolean(student.homeworkAssigned||student.homeworkNote);
+        const latestLesson=data.teachingLogs.filter(log=>String(log.studentId)===String(student.id)).sort((a,b)=>b.date.localeCompare(a.date)||b.slot-a.slot)[0];
+        const assigned=latestLesson?assignments.some(record=>record.date===latestLesson.date):Boolean(student.homeworkAssigned||student.homeworkNote);
         return '<li class="student-row"><button class="student-open" data-open-homework-student="'+esc(student.id)+'"><span class="student-details"><strong>'+esc(student.name)+'</strong><small class="student-summary">'+assignments.length+' bài đã giao</small><small class="homework-status '+(assigned?'is-assigned':'is-unassigned')+'">'+(assigned?'Đã giao':'Chưa giao')+'</small></span></button><button class="secondary" data-open-homework-student="'+esc(student.id)+'">Ghi bài</button></li>';
       }).join(''):'<li class="empty-state">Chưa có học sinh. Thêm học sinh trong mục Học sinh để bắt đầu giao bài.</li>';
     }
